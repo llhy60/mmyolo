@@ -90,7 +90,7 @@ class CSPNeXtPAFPN(BaseYOLONeck):
         Returns:
             nn.Module: The reduce layer.
         """
-        if idx == 2:
+        if idx == len(self.in_channels) - 1:
             layer = self.conv(
                 self.in_channels[idx],
                 self.in_channels[idx - 1],
@@ -126,7 +126,7 @@ class CSPNeXtPAFPN(BaseYOLONeck):
                 conv_cfg=self.conv_cfg,
                 norm_cfg=self.norm_cfg,
                 act_cfg=self.act_cfg)
-        elif idx == 2:
+        else:
             return nn.Sequential(
                 CSPLayer(
                     self.in_channels[idx - 1] * 2,

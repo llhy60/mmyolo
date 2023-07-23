@@ -6,7 +6,7 @@ dataset_type = 'YOLOv5VOCDataset'
 
 # parameters that often need to be modified
 num_classes = 20
-img_scale = (512, 512)
+img_scale = (512, 512)  # width, height
 max_epochs = 50
 train_batch_size_per_gpu = 64
 train_num_workers = 8
@@ -28,6 +28,8 @@ anchors = [[(26, 44), (67, 57), (61, 130)], [(121, 118), (120, 239),
 num_det_layers = 3
 
 load_from = 'https://download.openmmlab.com/mmyolo/v0/yolov5/yolov5_s-v61_syncbn_fast_8xb16-300e_coco/yolov5_s-v61_syncbn_fast_8xb16-300e_coco_20220918_084700-86e02187.pth'  # noqa
+
+tta_img_scales = [img_scale, (416, 416), (640, 640)]
 
 # Hyperparameter reference from:
 # https://github.com/ultralytics/yolov5/blob/master/data/hyps/hyp.VOC.yaml
@@ -62,6 +64,7 @@ with_mosiac_pipeline = [
         max_translate_ratio=0.04591,
         max_shear_degree=0.0,
         scaling_ratio_range=(1 - affine_scale, 1 + affine_scale),
+        # img_scale is (width, height)
         border=(-img_scale[0] // 2, -img_scale[1] // 2),
         border_val=(114, 114, 114)),
     dict(
@@ -80,6 +83,7 @@ with_mosiac_pipeline = [
                 max_translate_ratio=0.04591,
                 max_shear_degree=0.0,
                 scaling_ratio_range=(1 - affine_scale, 1 + affine_scale),
+                # img_scale is (width, height)
                 border=(-img_scale[0] // 2, -img_scale[1] // 2),
                 border_val=(114, 114, 114))
         ])
@@ -160,13 +164,11 @@ train_dataloader = dict(
         ],
         # Use ignore_keys to avoid judging metainfo is
         # not equal in `ConcatDataset`.
-        ignore_keys='DATASET_TYPE'),
+        ignore_keys='dataset_type'),
     collate_fn=dict(type='yolov5_collate'))
 
 test_pipeline = [
-    dict(
-        type='LoadImageFromFile',
-        file_client_args={{_base_.file_client_args}}),
+    dict(type='LoadImageFromFile', file_client_args=_base_.file_client_args),
     dict(type='YOLOv5KeepRatioResize', scale=img_scale),
     dict(
         type='LetterResize',
@@ -232,3 +234,37 @@ val_evaluator = dict(
 test_evaluator = val_evaluator
 
 train_cfg = dict(max_epochs=max_epochs)
+
+# Config for Test Time Augmentation. (TTA)
+_multiscale_resize_transforms = [
+    dict(
+        type='Compose',
+        transforms=[
+            dict(type='YOLOv5KeepRatioResize', scale=s),
+            dict(
+                type='LetterResize',
+                scale=s,
+                allow_scale_up=False,
+                pad_val=dict(img=114))
+        ]) for s in tta_img_scales
+]
+
+tta_pipeline = [
+    dict(type='LoadImageFromFile', file_client_args=_base_.file_client_args),
+    dict(
+        type='TestTimeAug',
+        transforms=[
+            _multiscale_resize_transforms,
+            [
+                dict(type='mmdet.RandomFlip', prob=1.),
+                dict(type='mmdet.RandomFlip', prob=0.)
+            ], [dict(type='mmdet.LoadAnnotations', with_bbox=True)],
+            [
+                dict(
+                    type='mmdet.PackDetInputs',
+                    meta_keys=('img_id', 'img_path', 'ori_shape', 'img_shape',
+                               'scale_factor', 'pad_param', 'flip',
+                               'flip_direction'))
+            ]
+        ])
+]

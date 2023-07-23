@@ -9,26 +9,46 @@ from ..registry import TASK_UTILS
 
 
 @COLLATE_FUNCTIONS.register_module()
-def yolov5_collate(data_batch: Sequence) -> dict:
-    """Rewrite collate_fn to get faster training speed."""
+def yolov5_collate(data_batch: Sequence,
+                   use_ms_training: bool = False) -> dict:
+    """Rewrite collate_fn to get faster training speed.
+
+    Args:
+       data_batch (Sequence): Batch of data.
+       use_ms_training (bool): Whether to use multi-scale training.
+    """
     batch_imgs = []
     batch_bboxes_labels = []
+    batch_masks = []
     for i in range(len(data_batch)):
         datasamples = data_batch[i]['data_samples']
         inputs = data_batch[i]['inputs']
+        batch_imgs.append(inputs)
 
         gt_bboxes = datasamples.gt_instances.bboxes.tensor
         gt_labels = datasamples.gt_instances.labels
+        if 'masks' in datasamples.gt_instances:
+            masks = datasamples.gt_instances.masks.to_tensor(
+                dtype=torch.bool, device=gt_bboxes.device)
+            batch_masks.append(masks)
         batch_idx = gt_labels.new_full((len(gt_labels), 1), i)
         bboxes_labels = torch.cat((batch_idx, gt_labels[:, None], gt_bboxes),
                                   dim=1)
         batch_bboxes_labels.append(bboxes_labels)
 
-        batch_imgs.append(inputs)
-    return {
-        'inputs': torch.stack(batch_imgs, 0),
-        'data_samples': torch.cat(batch_bboxes_labels, 0)
+    collated_results = {
+        'data_samples': {
+            'bboxes_labels': torch.cat(batch_bboxes_labels, 0)
+        }
     }
+    if len(batch_masks) > 0:
+        collated_results['data_samples']['masks'] = torch.cat(batch_masks, 0)
+
+    if use_ms_training:
+        collated_results['inputs'] = batch_imgs
+    else:
+        collated_results['inputs'] = torch.stack(batch_imgs, 0)
+    return collated_results
 
 
 @TASK_UTILS.register_module()
@@ -64,7 +84,7 @@ class BatchShapePolicy:
 
         n = len(image_shapes)  # number of images
         batch_index = np.floor(np.arange(n) / self.batch_size).astype(
-            np.int)  # batch index
+            np.int64)  # batch index
         number_of_batches = batch_index[-1] + 1  # number of batches
 
         aspect_ratio = image_shapes[:, 1] / image_shapes[:, 0]  # aspect ratio
@@ -86,7 +106,7 @@ class BatchShapePolicy:
 
         batch_shapes = np.ceil(
             np.array(shapes) * self.img_size / self.size_divisor +
-            self.extra_pad_ratio).astype(np.int) * self.size_divisor
+            self.extra_pad_ratio).astype(np.int64) * self.size_divisor
 
         for i, data_info in enumerate(data_list):
             data_info['batch_shape'] = batch_shapes[batch_index[i]]

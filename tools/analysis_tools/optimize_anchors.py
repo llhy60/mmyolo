@@ -11,20 +11,22 @@ Example:
 
         python tools/analysis_tools/optimize_anchors.py ${CONFIG} \
         --algorithm k-means --input-shape ${INPUT_SHAPE [WIDTH HEIGHT]} \
-        --output-dir ${OUTPUT_DIR}
+        --out-dir ${OUT_DIR}
+
     Use differential evolution to optimize anchors::
 
         python tools/analysis_tools/optimize_anchors.py ${CONFIG} \
         --algorithm differential_evolution \
         --input-shape ${INPUT_SHAPE [WIDTH HEIGHT]} \
-        --output-dir ${OUTPUT_DIR}
+        --out-dir ${OUT_DIR}
+
     Use v5-k-means to optimize anchors::
 
         python tools/analysis_tools/optimize_anchors.py ${CONFIG} \
         --algorithm v5-k-means \
         --input-shape ${INPUT_SHAPE [WIDTH HEIGHT]} \
         --prior_match_thr ${PRIOR_MATCH_THR} \
-        --output-dir ${OUTPUT_DIR}
+        --out-dir ${OUT_DIR}
 """
 import argparse
 import os.path as osp
@@ -33,18 +35,18 @@ from typing import Tuple
 
 import numpy as np
 import torch
-from mmdet.datasets import build_dataset
 from mmdet.structures.bbox import (bbox_cxcywh_to_xyxy, bbox_overlaps,
                                    bbox_xyxy_to_cxcywh)
 from mmdet.utils import replace_cfg_vals, update_data_root
 from mmengine.config import Config
 from mmengine.fileio import dump
 from mmengine.logging import MMLogger
+from mmengine.registry import init_default_scope
 from mmengine.utils import ProgressBar
 from scipy.optimize import differential_evolution
 from torch import Tensor
 
-from mmyolo.utils import register_all_modules
+from mmyolo.registry import DATASETS
 
 try:
     from scipy.cluster.vq import kmeans
@@ -63,7 +65,7 @@ def parse_args():
         help='input image size, represent [width, height]')
     parser.add_argument(
         '--algorithm',
-        default='differential_evolution',
+        default='DE',
         help='Algorithm used for anchor optimizing.'
         'Support k-means and differential_evolution for YOLO,'
         'and v5-k-means is special for YOLOV5.')
@@ -73,20 +75,21 @@ def parse_args():
         type=int,
         help='Maximum iterations for optimizer.')
     parser.add_argument(
-        '--prior_match_thr',
+        '--prior-match-thr',
         default=4.0,
         type=float,
-        help='anchor-label gt_filter_sizes ratio threshold hyperparameter used'
-        ' for training, default=4.0, this parameter is unique to v5-k-means')
+        help='anchor-label `gt_filter_sizes` ratio threshold '
+        'hyperparameter used for training, default=4.0, this '
+        'parameter is unique to v5-k-means')
     parser.add_argument(
-        '--mutation_args',
+        '--mutation-args',
         type=float,
         nargs='+',
         default=[0.9, 0.1],
         help='paramter of anchor optimize method genetic algorithm, '
         'represent [prob, sigma], this parameter is unique to v5-k-means')
     parser.add_argument(
-        '--augment_args',
+        '--augment-args',
         type=float,
         nargs='+',
         default=[0.9, 1.1],
@@ -95,7 +98,7 @@ def parse_args():
     parser.add_argument(
         '--device', default='cuda:0', help='Device used for calculating.')
     parser.add_argument(
-        '--output-dir',
+        '--out-dir',
         default=None,
         type=str,
         help='Path to save anchor optimize result.')
@@ -578,13 +581,14 @@ def main():
     args = parse_args()
     cfg = args.config
     cfg = Config.fromfile(cfg)
-    register_all_modules()
 
     # replace the ${key} with the value of cfg.key
     cfg = replace_cfg_vals(cfg)
 
     # update data root according to MMDET_DATASETS
     update_data_root(cfg)
+
+    init_default_scope(cfg.get('default_scope', 'mmyolo'))
 
     input_shape = args.input_shape
     assert len(input_shape) == 2
@@ -599,8 +603,7 @@ def main():
     train_data_cfg = cfg.train_dataloader
     while 'dataset' in train_data_cfg:
         train_data_cfg = train_data_cfg['dataset']
-    # dataset = DATASETS.build(train_data_cfg)
-    dataset = build_dataset(train_data_cfg)
+    dataset = DATASETS.build(train_data_cfg)
 
     if args.algorithm == 'k-means':
         optimizer = YOLOKMeansAnchorOptimizer(
@@ -610,8 +613,8 @@ def main():
             num_anchor_per_level=num_anchor_per_level,
             iters=args.iters,
             logger=logger,
-            out_dir=args.output_dir)
-    elif args.algorithm == 'differential_evolution':
+            out_dir=args.out_dir)
+    elif args.algorithm == 'DE':
         optimizer = YOLODEAnchorOptimizer(
             dataset=dataset,
             input_shape=input_shape,
@@ -619,7 +622,7 @@ def main():
             num_anchor_per_level=num_anchor_per_level,
             iters=args.iters,
             logger=logger,
-            out_dir=args.output_dir)
+            out_dir=args.out_dir)
     elif args.algorithm == 'v5-k-means':
         optimizer = YOLOV5KMeansAnchorOptimizer(
             dataset=dataset,
@@ -631,7 +634,7 @@ def main():
             mutation_args=args.mutation_args,
             augment_args=args.augment_args,
             logger=logger,
-            out_dir=args.output_dir)
+            out_dir=args.out_dir)
     else:
         raise NotImplementedError(
             f'Only support k-means and differential_evolution, '

@@ -20,36 +20,40 @@ def bbox_overlaps(pred: torch.Tensor,
     `Implementation of paper `Enhancing Geometric Factors into
     Model Learning and Inference for Object Detection and Instance
     Segmentation <https://arxiv.org/abs/2005.03572>`_.
+
     In the CIoU implementation of YOLOv5 and MMDetection, there is a slight
     difference in the way the alpha parameter is computed.
+
     mmdet version:
         alpha = (ious > 0.5).float() * v / (1 - ious + v)
     YOLOv5 version:
         alpha = v / (v - ious + (1 + eps)
+
     Args:
         pred (Tensor): Predicted bboxes of format (x1, y1, x2, y2)
             or (x, y, w, h),shape (n, 4).
         target (Tensor): Corresponding gt bboxes, shape (n, 4).
-        iou_mode (str): Options are "ciou".
+        iou_mode (str): Options are ('iou', 'ciou', 'giou', 'siou').
             Defaults to "ciou".
         bbox_format (str): Options are "xywh" and "xyxy".
             Defaults to "xywh".
         siou_theta (float): siou_theta for SIoU when calculate shape cost.
             Defaults to 4.0.
         eps (float): Eps to avoid log(0).
+
     Returns:
-        Tensor: shape (n,).
+        Tensor: shape (n, ).
     """
-    assert iou_mode in ('ciou', 'giou', 'siou')
+    assert iou_mode in ('iou', 'ciou', 'giou', 'siou')
     assert bbox_format in ('xyxy', 'xywh')
     if bbox_format == 'xywh':
         pred = HorizontalBoxes.cxcywh_to_xyxy(pred)
         target = HorizontalBoxes.cxcywh_to_xyxy(target)
 
-    bbox1_x1, bbox1_y1 = pred[:, 0], pred[:, 1]
-    bbox1_x2, bbox1_y2 = pred[:, 2], pred[:, 3]
-    bbox2_x1, bbox2_y1 = target[:, 0], target[:, 1]
-    bbox2_x2, bbox2_y2 = target[:, 2], target[:, 3]
+    bbox1_x1, bbox1_y1 = pred[..., 0], pred[..., 1]
+    bbox1_x2, bbox1_y2 = pred[..., 2], pred[..., 3]
+    bbox2_x1, bbox2_y1 = target[..., 0], target[..., 1]
+    bbox2_x2, bbox2_y2 = target[..., 2], target[..., 3]
 
     # Overlap
     overlap = (torch.min(bbox1_x2, bbox2_x2) -
@@ -69,12 +73,12 @@ def bbox_overlaps(pred: torch.Tensor,
     ious = overlap / union
 
     # enclose area
-    enclose_x1y1 = torch.min(pred[:, :2], target[:, :2])
-    enclose_x2y2 = torch.max(pred[:, 2:], target[:, 2:])
+    enclose_x1y1 = torch.min(pred[..., :2], target[..., :2])
+    enclose_x2y2 = torch.max(pred[..., 2:], target[..., 2:])
     enclose_wh = (enclose_x2y2 - enclose_x1y1).clamp(min=0)
 
-    enclose_w = enclose_wh[:, 0]  # cw
-    enclose_h = enclose_wh[:, 1]  # ch
+    enclose_w = enclose_wh[..., 0]  # cw
+    enclose_h = enclose_wh[..., 1]  # ch
 
     if iou_mode == 'ciou':
         # CIoU = IoU - ( (ρ^2(b_pred,b_gt) / c^2) + (alpha x v) )

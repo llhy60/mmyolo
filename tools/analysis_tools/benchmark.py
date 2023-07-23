@@ -5,17 +5,15 @@ import os
 import time
 
 import torch
-from mmdet.models import build_detector
 from mmengine import Config, DictAction
 from mmengine.dist import get_world_size, init_dist
 from mmengine.logging import MMLogger, print_log
+from mmengine.registry import init_default_scope
 from mmengine.runner import Runner, load_checkpoint
 from mmengine.utils import mkdir_or_exist
 from mmengine.utils.dl_utils import set_multi_processing
 
-from mmyolo.utils import register_all_modules
-
-register_all_modules()
+from mmyolo.registry import MODELS
 
 
 # TODO: Refactoring and improving
@@ -82,7 +80,7 @@ def measure_inference_speed(cfg, checkpoint, max_iter, log_interval,
     data_loader = Runner.build_dataloader(dataloader_cfg)
 
     # build the model and load checkpoint
-    model = build_detector(cfg.model)
+    model = MODELS.build(cfg.model)
     load_checkpoint(model, checkpoint, map_location='cpu')
     model = model.cuda()
     model.eval()
@@ -162,6 +160,8 @@ def main():
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+
+    init_default_scope(cfg.get('default_scope', 'mmyolo'))
 
     distributed = False
     if args.launcher != 'none':

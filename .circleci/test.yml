@@ -66,9 +66,9 @@ jobs:
           name: Install mmyolo dependencies
           command: |
             pip install -U openmim
-            mim install 'mmengine >= 0.3.0'
-            mim install 'mmcv >= 2.0.0rc1'
-            pip install git+https://github.com/open-mmlab/mmdetection.git@dev-3.x
+            mim install git+https://github.com/open-mmlab/mmengine.git@main
+            mim install 'mmcv >= 2.0.0rc4'
+            mim install git+https://github.com/open-mmlab/mmdetection.git@dev-3.x
             pip install -r requirements/albu.txt
             pip install -r requirements/tests.txt
       - run:
@@ -99,7 +99,7 @@ jobs:
         type: string
       cuda:
         type: enum
-        enum: ["10.1", "10.2", "11.1","11.0"]
+        enum: ["10.1", "10.2", "11.1", "11.0"]
       cudnn:
         type: integer
         default: 7
@@ -124,8 +124,8 @@ jobs:
           name: Install mmyolo dependencies
           command: |
             docker exec mmyolo pip install -U openmim
-            docker exec mmyolo mim install 'mmengine >= 0.3.0'
-            docker exec mmyolo mim install 'mmcv >= 2.0.0rc1'
+            docker exec mmyolo mim install -e /mmengine
+            docker exec mmyolo mim install 'mmcv >= 2.0.0rc4'
             docker exec mmyolo pip install -e /mmdetection
             docker exec mmyolo pip install -r requirements/albu.txt
             docker exec mmyolo pip install -r requirements/tests.txt
@@ -151,8 +151,7 @@ workflows:
 
   pr_stage_test:
     when:
-      not:
-        << pipeline.parameters.lint_only >>
+      not: << pipeline.parameters.lint_only >>
     jobs:
       - lint:
           name: lint
@@ -164,7 +163,7 @@ workflows:
           name: minimum_version_cpu
           torch: 1.8.0
           torchvision: 0.9.0
-          python: 3.8.0  # The lowest python 3.6.x version available on CircleCI images
+          python: 3.8.0 # The lowest python 3.7.x version available on CircleCI images
           requires:
             - lint
       - build_cpu:
@@ -188,8 +187,7 @@ workflows:
             - hold
   merge_stage_test:
     when:
-      not:
-        << pipeline.parameters.lint_only >>
+      not: << pipeline.parameters.lint_only >>
     jobs:
       - build_cuda:
           name: minimum_version_gpu
